@@ -47,6 +47,9 @@ export async function POST(request: NextRequest) {
   const title = (formData.get('title') as string | null) ?? null;
   const priceRaw = formData.get('price') as string | null;
   const price = priceRaw ? parseFloat(priceRaw) : null;
+  const hasWatermark = formData.get('has_watermark') !== 'false'; // default true
+  const mediaType = (formData.get('media_type') as string | null) ?? 'photo';
+  const aspectRatio = (formData.get('aspect_ratio') as string | null) ?? 'auto';
 
   if (!file || !folderId) {
     return Response.json({ error: 'file e folder_id são obrigatórios' }, { status: 400 });
@@ -55,21 +58,73 @@ export async function POST(request: NextRequest) {
   const arrayBuffer = await file.arrayBuffer();
   const originalBuffer = Buffer.from(arrayBuffer);
 
-  // Obter metadados da imagem
-  const meta = await sharp(originalBuffer).metadata();
-  const width = meta.width ?? 0;
-  const height = meta.height ?? 0;
-
   // Gerar UUID para o arquivo
   const photoId = crypto.randomUUID();
   const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg';
   const originalPath = `${folderId}/${photoId}.${ext}`;
-  const watermarkedPath = `${folderId}/${photoId}.jpg`;
-
-  // Criar versão com marca d'água
-  const watermarkedBuffer = await buildWatermarkedBuffer(originalBuffer, width, height);
 
   const svc = getServiceClient();
+
+  if (mediaType === 'video') {
+    // Videos: upload directly to watermarked bucket without processing
+    const videoPath = `${folderId}/${photoId}.${ext}`;
+
+    const { error: videoErr } = await svc.storage
+      .from('watermarked')
+      .upload(videoPath, originalBuffer, {
+        contentType: file.type,
+        upsert: false,
+      });
+
+    if (videoErr) {
+      return Response.json({ error: 'Erro ao salvar vídeo: ' + videoErr.message }, { status: 500 });
+    }
+
+    const { data: { publicUrl } } = svc.storage
+      .from('watermarked')
+      .getPublicUrl(videoPath);
+
+    const { data: photo, error: dbErr } = await svc
+      .from('photos')
+      .insert({
+        id: photoId,
+        folder_id: folderId,
+        title: title ?? file.name.replace(/\.[^.]+$/, ''),
+        filename: file.name,
+        original_path: videoPath,
+        watermarked_path: videoPath,
+        watermarked_url: publicUrl,
+        width: null,
+        height: null,
+        size_bytes: originalBuffer.length,
+        price: price && !isNaN(price) ? price : null,
+        sort_order: 0,
+        published: true,
+        has_watermark: false,
+        media_type: 'video' as const,
+        aspect_ratio: aspectRatio,
+      })
+      .select()
+      .single();
+
+    if (dbErr) {
+      return Response.json({ error: 'Erro no banco: ' + dbErr.message }, { status: 500 });
+    }
+
+    return Response.json({ photo }, { status: 201 });
+  }
+
+  // Photo flow: use Sharp for processing
+  const meta = await sharp(originalBuffer).metadata();
+  const width = meta.width ?? 0;
+  const height = meta.height ?? 0;
+
+  const watermarkedPath = `${folderId}/${photoId}.jpg`;
+
+  // Criar versão pública (com ou sem marca d'água)
+  const watermarkedBuffer = hasWatermark
+    ? await buildWatermarkedBuffer(originalBuffer, width, height)
+    : await sharp(originalBuffer).jpeg({ quality: 88, progressive: true }).toBuffer();
 
   // Upload original (privado)
   const { error: origErr } = await svc.storage
@@ -116,9 +171,12 @@ export async function POST(request: NextRequest) {
       width,
       height,
       size_bytes: originalBuffer.length,
-      price,
+      price: price && !isNaN(price) ? price : null,
       sort_order: 0,
       published: true,
+      has_watermark: hasWatermark,
+      media_type: 'photo' as const,
+      aspect_ratio: aspectRatio,
     })
     .select()
     .single();

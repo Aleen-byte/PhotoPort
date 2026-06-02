@@ -67,6 +67,9 @@ export interface PhotoRow {
   price: number | null;
   sort_order: number;
   published: boolean;
+  has_watermark: boolean;
+  media_type: 'photo' | 'video';
+  aspect_ratio: string;
   created_at: string;
 }
 

@@ -9,7 +9,7 @@ export async function PUT(request: NextRequest, ctx: RouteContext<'/api/admin/ph
   const body = await request.json() as Record<string, unknown>;
 
   const updates: Record<string, unknown> = {};
-  for (const k of ['title', 'price', 'sort_order', 'published']) {
+  for (const k of ['title', 'price', 'sort_order', 'published', 'aspect_ratio']) {
     if (body[k] !== undefined) updates[k] = body[k];
   }
 

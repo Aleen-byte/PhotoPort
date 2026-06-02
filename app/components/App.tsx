@@ -74,10 +74,10 @@ export function App() {
   useEffect(() => {
     const sb = getSupabaseClient();
     sb.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: { subscription } } = sb.auth.onAuthStateChange((_, newSession) => {
+    const { data: { subscription } } = sb.auth.onAuthStateChange((event, newSession) => {
       setSession(newSession);
-      if (newSession && screen === 'login') setScreen('admin');
-      if (!newSession && screen === 'admin') setScreen('home');
+      if (event === 'SIGNED_IN') setScreen('admin');
+      if (event === 'SIGNED_OUT') setScreen('home');
     });
     return () => subscription.unsubscribe();
   // eslint-disable-next-line react-hooks/exhaustive-deps
