@@ -31,7 +31,7 @@ interface LoginProps {
   onLogin: () => void;
 }
 
-export function Login({ onNavigate }: LoginProps) {
+export function Login({ onNavigate, onLogin }: LoginProps) {
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
   const [error, setError] = useState('');
@@ -41,11 +41,13 @@ export function Login({ onNavigate }: LoginProps) {
     e.preventDefault();
     setError('');
     setLoading(true);
-    const { error: authErr } = await getSupabaseClient().auth.signInWithPassword({ email, password: pw });
+    const { error: authErr, data } = await getSupabaseClient().auth.signInWithPassword({ email, password: pw });
     if (authErr) {
       setError('E-mail ou senha incorretos.');
+      setLoading(false);
+    } else if (data.session) {
+      onLogin();
     }
-    // onLogin será chamado pelo onAuthStateChange no App.tsx
     setLoading(false);
   };
 
